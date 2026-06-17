@@ -4,6 +4,7 @@ import os
 import json
 import warnings
 import logging
+import tempfile
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -59,8 +60,9 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
     logger.info(f"[EMBARGO] 历史训练集隔离拦截终点: {training_dates[-1].strftime('%Y-%m-%d')}")
     logger.info(f"[EMBARGO] 盘后实盘配资决策执行点: {current_production_date.strftime('%Y-%m-%d')}")
     
-    X_train = X_panel.loc[training_dates]
-    y_train = y_panel.loc[training_dates]
+    # 【修复：防范 MultiIndex 跨版本切片异动异常】使用显式 .isin 机制
+    X_train = X_panel.loc[X_panel.index.isin(training_dates, level=0)]
+    y_train = y_panel.loc[y_panel.index.isin(training_dates, level=0)]
     
     # 3. 训练条件分位数非参数估计引擎并锁定残差分布
     engine.fit_and_quantify(X_train, y_train)
@@ -69,19 +71,30 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
     current_X_dict = {}
     historical_returns_builder = {}
     for symbol in config.SYMBOLS:
-        current_X_dict[symbol] = X_panel.xs((current_production_date, symbol)).values
+        # 生产级防御：校验当前日期横截面样本点完备性
+        if (current_production_date, symbol) in X_panel.index:
+            current_X_dict[symbol] = X_panel.xs((current_production_date, symbol)).values
+        else:
+            symbol_data = X_panel.xs(symbol, level='Symbol')
+            valid_historical = symbol_data.index[symbol_data.index <= current_production_date]
+            if len(valid_historical) > 0:
+                current_X_dict[symbol] = symbol_data.loc[valid_historical[-1]].values
+            else:
+                raise KeyError(f"Critical engineering fault: No viable features for {symbol} at {current_production_date}")
+                
         historical_returns_builder[symbol] = y_panel.xs(symbol, level='Symbol')
         
-    historical_returns_df = pd.DataFrame(historical_returns_builder).loc[:current_production_date].dropna()
+    # 【修复：前瞻性欺骗彻底阻断】 
+    # y_panel 存储的是前瞻收益标签(t+1)，构建协方差矩阵历史窗口时必须执行 .iloc[:-1] 截断当前观察日，防止混入未来信息
+    historical_returns_df = pd.DataFrame(historical_returns_builder).loc[:current_production_date].iloc[:-1].dropna()
 
-    # 5. 【修复幽灵变量】推演得到今日量价的条件期望点预测与 CQR 统计幅宽
+    # 5. 推演得到今日量价的条件期望点预测与 CQR 统计幅宽
     predictions_dict = engine.predict_with_bounds(current_X_dict)
     
     ml_predictions_map = {sym: float(predictions_dict[sym][0]) for sym in config.SYMBOLS}
     cqr_widths_map = {sym: float(predictions_dict[sym][2] - predictions_dict[sym][1]) for sym in config.SYMBOLS}
 
-    # 6. 【数据合规】抓取盘后 15:00 收盘前的权威文本新闻语料（模拟时序隔离禁运）
-    # 在真实生产中，此处直接挂接你本地的非结构化新闻、财报或研报数据库
+    # 6. 【数据合规】抓取盘后收盘前的权威文本新闻语料
     mock_todays_corpus = [{"headline": "Tech semiconductor stocks rally sharply", "timestamp": "14:22:00"}]
     
     analyst = LLMTextAnalyst(api_key="sk-mock-key-for-conformal-pipeline")
@@ -117,9 +130,20 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
         }
     }
     
-    json_out = os.path.join(config.REPORT_DIR, "multi_asset_llm_payload.json")
-    with open(json_out, 'w', encoding='utf-8') as f:
-        json.dump(llm_payload, f, indent=4, ensure_ascii=False)
+    # 【修复：多轮冲刷覆盖与文件破坏防御】
+    # 策略 A：建立带有日度与日内高精时间戳的动态文件体系
+    timestamp_str = datetime.now().strftime('%H%M%S')
+    dynamic_filename = f"multi_asset_llm_payload_{current_production_date.strftime('%Y%m%d')}_{timestamp_str}.json"
+    json_out_dynamic = os.path.join(config.REPORT_DIR, dynamic_filename)
+    json_out_static = os.path.join(config.REPORT_DIR, "multi_asset_llm_payload.json")
+    
+    # 策略 B：执行多线程/多进程安全的原子性落盘 (Atomic JSON Writing)
+    for output_path in [json_out_dynamic, json_out_static]:
+        dir_name = os.path.dirname(output_path)
+        with tempfile.NamedTemporaryFile('w', dir=dir_name, delete=False, encoding='utf-8') as tf:
+            json.dump(llm_payload, tf, indent=4, ensure_ascii=False)
+            temp_name = tf.name
+        os.replace(temp_name, output_path)
         
     # 9. 输出中英双语核心生产看板终端
     print("\n" + "="*85)

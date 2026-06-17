@@ -35,22 +35,20 @@ class BayesianExecutionBridge:
         hist_window = historical_returns_df[symbols].iloc[-w_size:]
         lw = LedoitWolf()
         Sigma = lw.fit(hist_window.values).covariance_
-        Sigma += np.eye(n_assets) * 1e-8  # 双重保险脊惩罚项，确保100%正定可逆
+        Sigma += np.eye(n_assets) * 1e-8  # 双重保险阻尼项，确保100%正定可逆
         
-        # Layer 2: 【学术修正】将机器学习条件期望点预测，直接作为贝叶斯先验基准向量 Pi
+        # Layer 2: 将机器学习条件期望点预测，直接作为贝叶斯先验基准向量 Pi
         Pi = np.zeros((n_assets, 1))
         for i, symbol in enumerate(symbols):
             Pi[i, 0] = ml_point_predictions[symbol]
             
         # 同时根据 CQR 动态幅宽，对资产自身的先验方差进行条件异方差自适应缩放（构建 ML 先验方差大底）
-        # 这打破了标准 BL 强制指定一个全局标量 tau 的僵化假设
         Sigma_ML = np.zeros((n_assets, n_assets))
         for i, symbol in enumerate(symbols):
             width_factor = (cqr_widths[symbol] * self.config.TAU) ** 2
             Sigma_ML[i, i] = Sigma[i, i] * max(width_factor, 1e-6)
             
-        # Layer 3: 【数理升级】动态构建大模型外部观点矩阵 (P_text, Q_text, Omega_text)
-        # 如果今天没有任何显著新闻，则 K=0，贝叶斯后验将自然平滑退回量价先验 Pi
+        # Layer 3: 动态构建大模型外部观点矩阵 (P_text, Q_text, Omega_text)
         P_list = []
         Q_list = []
         Omega_list = []
@@ -68,7 +66,7 @@ class BayesianExecutionBridge:
                     # 填充文本预测的条件预期收益 Delta
                     Q_list.append(np.array([[impact]]))
                     
-                    # 数理守卫：该新闻观点的方差锚定资产本身协方差乘以 LLM 识别的不确定性系数
+                    # 该新闻观点的方差锚定资产本身协方差乘以 LLM 识别的不确定性系数
                     text_variance = Sigma[idx, idx] * text_uncertainty
                     Omega_list.append(np.array([[max(text_variance, 1e-7)]]))
 
@@ -87,7 +85,7 @@ class BayesianExecutionBridge:
             # 联合条件期望推演
             BL_returns = np.dot(posterior_precision, np.dot(inv_Sigma_ML, Pi) + np.dot(np.dot(P_text.T, inv_Omega_text), Q_text)).flatten()
         else:
-            # 机制防御：无外部重大突发新闻时，白盒系统直接安全收缩回复回归树量价底座
+            # 机制防御：无外部重大突发新闻时，系统直接安全收缩回复回归树量价底座
             BL_returns = Pi.flatten()
 
         # Layer 5: 马科维茨均值-方差交易有约束非线性最大夏普优化器 (MVO)
