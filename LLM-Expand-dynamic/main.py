@@ -96,8 +96,19 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
 
     # 6. 【数据合规】抓取盘后收盘前的权威文本新闻语料
     mock_todays_corpus = [{"headline": "Tech semiconductor stocks rally sharply", "timestamp": "14:22:00"}]
-    
-    analyst = LLMTextAnalyst(api_key="sk-mock-key-for-conformal-pipeline")
+
+    # 【解耦重构】：通过 OS 环境变量安全总线调取密钥凭证，若生产环境未配配置，则平滑降级使用仿真 Mock Key
+    api_key = os.getenv(config.LLM_API_KEY_ENV, "sk-mock-key-for-conformal-pipeline")
+
+    # 【全面注入】：彻底交托 PipelineConfig 统管控制，模型切换无需修改此处任何一行业务逻辑
+    analyst = LLMTextAnalyst(
+        api_key=api_key,
+        model_name=config.LLM_MODEL_NAME,
+        api_url=config.LLM_API_URL,
+        temperature=config.LLM_TEMPERATURE,
+        timeout=config.LLM_TIMEOUT
+    )
+
     llm_views = analyst.analyze_news_to_views(mock_todays_corpus, config.SYMBOLS)
     logger.info(f"[LLM-VIEW] 大模型文本层解析生成的结构化外部观点: {llm_views}")
 

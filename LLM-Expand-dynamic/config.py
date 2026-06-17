@@ -26,6 +26,19 @@ class PipelineConfig:
         'Mom_1D', 'Mom_5D', 'Mom_20D', 'GK_Vol', 'Turnover_Shock'
     ])
     
+    # !!-- 切换模型修改 LLM_API_URL 和 LLM_MODEL_NAME 即可 --!!
+    # =========================================================================
+    #  【抽象升级】LLM 文本分析层灵活配置中心 (解耦硬编码，完美适配任何主流大模型服务商)
+    # =========================================================================
+    # 选项 A (默认DeepSeek): "https://api.deepseek.com/v1" | "deepseek-chat"
+    # 选项 B (全球主流OpenAI): "https://api.openai.com/v1" | "gpt-4o-mini"
+    # 选项 C (本地离线私有云): "http://localhost:11434/v1" | "qwen2.5:7b-instruct" (Ollama / vLLM)
+    LLM_API_URL: str = "https://api.deepseek.com/v1"        # 统一 API 端点基础路径
+    LLM_MODEL_NAME: str = "deepseek-chat"                  # 目标大模型名称标识符
+    LLM_TEMPERATURE: float = 0.1                            # 采样温度 (极低温度保障结构化 JSON 高确定性输出)
+    LLM_TIMEOUT: float = 15.0                              # 请求超时熔断阈值(秒)，防范实盘盘后网络挂起
+    LLM_API_KEY_ENV: str = "QUANT_LLM_API_KEY"             # 系统环境变量名，代码库中不出现明文密钥
+    
     # 生产文件持久化路径
     BASE_OUTPUT_FOLDER: str = "./production_output"
     MODEL_DIR: str = field(init=False)
