@@ -4,3 +4,7 @@
 2026/6/16
 1. The data retriving seems something wrong. The executed result table for 2026/6/12 (Friday) and 2026/6/15 (Monday) is exactly the same.
    -> Scheduling to add log outputs during feature factoring step to locate the probleming point
+
+2026/6/21
+(Not bug record, notebook for future works on hold)
+Integreate LLM-Expand -> Mult-Layer+Finance -> Mult-model
