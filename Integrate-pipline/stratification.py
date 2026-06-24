@@ -27,20 +27,22 @@ class CrossModalStratifier:
         
         return {symbols[i]: int(labels[i]) for i in range(len(symbols))}
         
-    def generate_stratified_omega(self, cqr_widths: dict, cohorts: dict) -> pd.DataFrame:
-        """Constructs a stratified block-diagonal view error matrix Omega."""
+    #引入语义不确定性惩罚项
+    def generate_stratified_omega(self, cqr_widths: dict, cohorts: dict, llm_views: dict) -> pd.DataFrame:
         symbols = list(cqr_widths.keys())
         n = len(symbols)
         omega_mat = np.zeros((n, n))
-        
+    
         for i, s_i in enumerate(symbols):
             for j, s_j in enumerate(symbols):
                 if i == j:
-                    # Baseline variance scaling via CQR widths
-                    omega_mat[i, j] = (cqr_widths[s_i] ** 2) * self.config.TAU
+                #若大模型观点绝对值过大（情绪激进）或语义模糊，强制引入方差乘数,对应“语义噪声主动防御/贝叶斯收缩机制”
+                    llm_sentiment = llm_views.get(s_i, 0.0)
+                    semantic_noise_multiplier = 1.0 + np.abs(llm_sentiment) * 2.0  # 模拟文本熵通胀
+                    omega_mat[i, j] = (cqr_widths[s_i] ** 2) * self.config.TAU * semantic_noise_multiplier
+                    
                 elif cohorts[s_i] == cohorts[s_j]:
-                    # Asset risk-sentiment co-movement penalty tracking
                     base_variance = cqr_widths[s_i] * cqr_widths[s_j] * self.config.TAU
                     omega_mat[i, j] = base_variance * self.config.RHO_COHORT
-                    
+                
         return pd.DataFrame(omega_mat, index=symbols, columns=symbols)
