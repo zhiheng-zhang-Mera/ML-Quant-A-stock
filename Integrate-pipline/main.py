@@ -7,6 +7,9 @@ import warnings
 from datetime import datetime
 import numpy as np
 import pandas as pd
+import subprocess
+import time
+import requests
 
 warnings.filterwarnings('ignore', category=UserWarning)
 
@@ -101,10 +104,54 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
     mock_todays_corpus = [{"headline": "Global cross-border asset inflows expand structurally", "timestamp": "14:45:00"}]
     
     # =========================================================================
-    # 🔄【多路由网关组装阶段】：根据路由指示，切分鉴权行为
+    # 🔄【多路由网关组装阶段】：根据路由指示，切分鉴权与本地进程守护
     if config.LLM_PROVIDER.upper() == "OLLAMA":
         api_key = "local-ollama-bypass"
         logger.info(f"[LLM-INIT] ⚡ 激活本地自托管 Ollama 决策层网关 | 镜像底座: {config.OLLAMA_MODEL_NAME}")
+        
+        # 🛡️【新增 Ollama 进程全自动健康检查与唤醒守护盾】
+        base_url = config.OLLAMA_API_URL.split("/v1")[0]  # 提取基础服务路径 http://localhost:11434
+        try:
+            # 尝试发送轻量级探针请求
+            probe_res = requests.get(base_url, timeout=2)
+            if probe_res.status_code == 200:
+                logger.info("[OLLAMA-GUARD] ✅ 检测到本地 Ollama 后台守护进程正处于活跃监听状态，无需重复唤醒。")
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            logger.warning("[OLLAMA-GUARD] ⚠️ 探针未得到积极响应。当前本地 Ollama 引擎处于离线闭锁状态！")
+            logger.warning("[OLLAMA-GUARD] 🚀 正在触发现发级自动唤醒程序，尝试全自动拉起本地大模型引擎...")
+            
+            try:
+                # 跨平台异步拉起本地静默守护进程
+                subprocess.Popen(
+                    ["ollama", "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    close_fds=True  # 斩断主程序与大模型进程的句柄捆绑，保障主程序即使报错退出，LLM后台依然稳定常驻
+                )
+                
+                # 进入贝叶斯心跳等待对齐判定循环
+                max_retries = 15
+                boot_success = False
+                logger.info("[OLLAMA-GUARD] ⏳ 正在等待本地计算框架完成内存加载与对齐...")
+                
+                for attempt in range(max_retries):
+                    time.sleep(1)
+                    try:
+                        retry_res = requests.get(base_url, timeout=1)
+                        if retry_res.status_code == 200:
+                            logger.info(f"[OLLAMA-GUARD] 🎉 本地大模型计算引擎已成功被管线完全拉起！心跳对齐耗时: {attempt + 1}秒。")
+                            boot_success = True
+                            break
+                    except requests.exceptions.ConnectionError:
+                        if (attempt + 1) % 5 == 0:
+                            logger.info(f"[OLLAMA-GUARD] 引擎加载中，已等待 ({attempt + 1}/{max_retries}s)...")
+                
+                if not boot_success:
+                    logger.critical("[OLLAMA-GUARD] ❌ 自动拉起本地引擎失败或超时。主程序即将切入弱软柔性降级状态。")
+            except Exception as system_err:
+                logger.error(f"[OLLAMA-GUARD] ❌ 操作系统拒绝执行拉起指令。原因: {str(system_err)}")
+                logger.error("[OLLAMA-GUARD] 提示：请确保您的系统环境变量 PATH 中正确配置了 'ollama' 命令。")
+
     else:
         api_key = os.getenv(config.DEEPSEEK_API_KEY_ENV, "sk-mock-key-for-conformal-pipeline")
         logger.info(f"[LLM-INIT] 🌐 激活云端公有链 DeepSeek 决策层网关 | 模型标识: {config.DEEPSEEK_MODEL_NAME}")
