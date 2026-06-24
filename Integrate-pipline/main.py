@@ -97,9 +97,10 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
     logger.info(f"[LLM-VIEW] Structured Context Information: {llm_views}")
 
     # 7. Multi-Modal Stratification & Construct Block-Diagonal View Variance 
+    # 增加传入真实文本层视图进行狄利克雷过程分裂与对比撕裂度测算
     cohorts = stratifier.compute_asset_cohorts(cqr_widths_map, llm_views)
-    omega_matrix = stratifier.generate_stratified_omega(cqr_widths_map, cohorts)
-    logger.info(f"[STRATIFICATION] Cohort Mappings: {cohorts}")
+    omega_matrix = stratifier.generate_stratified_omega(cqr_widths_map, cohorts, llm_views)
+    logger.info(f"[STRATIFICATION] DP-GMM Automatically Discovered Active Cohorts: {cohorts}")
 
     # 8. Compute Pricing Kernel Black-Litterman Matrix Blending & Allocation Optimizations
     bl_returns, target_weights = bridge.compute_matrix_bl_and_optimize(
