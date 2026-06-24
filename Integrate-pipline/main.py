@@ -99,7 +99,16 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
 
     # 6. Capture NLP Real-Time Context Data
     mock_todays_corpus = [{"headline": "Global cross-border asset inflows expand structurally", "timestamp": "14:45:00"}]
-    api_key = os.getenv(config.LLM_API_KEY_ENV, "sk-mock-key-for-conformal-pipeline")
+    
+    # =========================================================================
+    # 🔄【多路由网关组装阶段】：根据路由指示，切分鉴权行为
+    if config.LLM_PROVIDER.upper() == "OLLAMA":
+        api_key = "local-ollama-bypass"
+        logger.info(f"[LLM-INIT] ⚡ 激活本地自托管 Ollama 决策层网关 | 镜像底座: {config.OLLAMA_MODEL_NAME}")
+    else:
+        api_key = os.getenv(config.DEEPSEEK_API_KEY_ENV, "sk-mock-key-for-conformal-pipeline")
+        logger.info(f"[LLM-INIT] 🌐 激活云端公有链 DeepSeek 决策层网关 | 模型标识: {config.DEEPSEEK_MODEL_NAME}")
+    # =========================================================================
     
     analyst = LLMTextAnalyst(api_key=api_key, config=config)
     llm_views = analyst.analyze_news_to_views(mock_todays_corpus, config.SYMBOLS)

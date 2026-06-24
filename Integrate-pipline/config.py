@@ -23,12 +23,24 @@ class PipelineConfig:
     RHO_COHORT: float = 0.15            # Asset cluster group correlation factor for block-diagonal Omega
     N_COHORTS: int = 2                  # Number of cross-sectional stratification clusters
     
-    # Decoupled LLM Gateway configurations
-    LLM_API_KEY_ENV: str = "DEEPSEEK_API_KEY"
-    LLM_MODEL_NAME: str = "deepseek-chat"
-    LLM_API_URL: str = "https://api.deepseek.com/v1"
+    # =========================================================================
+    # 🎛️ 【核心升级】：大模型多路由调度总线开关 (LLM Gateway Router Switch)
+    # 选项: "DEEPSEEK" (云端高精度) 或 "OLLAMA" (本地零开销脱机)
+    LLM_PROVIDER: str = "OLLAMA"        
+    
+    # Option A: Cloud DeepSeek Coordinates
+    DEEPSEEK_API_KEY_ENV: str = "DEEPSEEK_API_KEY"
+    DEEPSEEK_MODEL_NAME: str = "deepseek-chat"
+    DEEPSEEK_API_URL: str = "https://api.deepseek.com/v1"
+    
+    # Option B: Local Ollama Coordinates (OpenAI-Compatible Engine Endpoints)
+    OLLAMA_MODEL_NAME: str = "qwen2.5:7b"  # 可自由替换为 "llama3" 或 "deepseek-r1:7b"
+    OLLAMA_API_URL: str = "http://localhost:11434/v1"
+    
+    # Shared Inference Hyperparameters
     LLM_TEMPERATURE: float = 0.1
-    LLM_TIMEOUT: float = 15.0
+    LLM_TIMEOUT: float = 45.0           # 🚨 本地推理容易遭遇硬件Stall，通胀超时拉回防线
+    # =========================================================================
     
     # IO Infrastructure Coordinates
     BASE_OUTPUT_FOLDER: str = "production_output"
