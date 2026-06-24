@@ -81,4 +81,15 @@ class CrossModalStratifier:
                     base_co_variance = cqr_widths[s_i] * cqr_widths[s_j] * self.config.TAU
                     omega_mat[i, j] = base_co_variance * self.config.RHO_COHORT
                     
+        symbols = list(cqr_widths.keys())
+        ridge_eps = 1e-6
+        omega_mat += np.eye(len(symbols)) * ridge_eps
+        
+        # 【数理防线加固】：通过特征值裁剪，确保矩阵绝对正定
+        eigvals, eigvecs = np.linalg.eigh(omega_mat)
+        if np.any(eigvals <= 0):
+            # 将所有负或接近于0的特征值强制平摊调整为安全阈值
+            eigvals = np.clip(eigvals, a_min=1e-5, a_max=None)
+            omega_mat = eigvecs @ np.diag(eigvals) @ eigvecs.T
+
         return pd.DataFrame(omega_mat, index=symbols, columns=symbols)

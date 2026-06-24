@@ -50,6 +50,7 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
     X_panel, y_panel = processor.build_feature_space(raw_multi_asset_data)
     dates = X_panel.index.get_level_values(0).unique().sort_values()
     
+    # 替换 main.py 中 Step 2 后的日志流逻辑
     # 2. Strict Temporal Embargo Filtering (Look-Ahead Leakage Protection)
     train_end_idx = len(dates) - 1 - config.EMBARGO_PERIOD
     if train_end_idx < config.MIN_REQUIRED_SAMPLES:
@@ -58,8 +59,16 @@ def run_production_pipeline(raw_multi_asset_data: dict) -> dict:
     training_dates = dates[:train_end_idx]
     current_production_date = dates[-1]
     
+    # 【新增实时Ingestion死锁校验防线】
+    today_date_str = datetime.today().strftime('%Y-%m-%d')
+    production_date_str = current_production_date.strftime('%Y-%m-%d')
+    
+    if production_date_str != today_date_str:
+        logger.warning(f"[DATA_STALL_WARNING] !!! 生产观测日 ({production_date_str}) 与系统当前日历日 ({today_date_str}) 发生脱节 !!!")
+        logger.warning("[DATA_STALL_WARNING] 提示：上游数据源（AkShare/DB）可能尚未刷新今日Post-Market收盘Bar。当前系统处于僵尸数据空转防御状态。")
+    
     logger.info(f"[EMBARGO] Historical Training Cutoff Anchor Date: {training_dates[-1].strftime('%Y-%m-%d')}")
-    logger.info(f"[EMBARGO] Post-Market Production Execution Horizon: {current_production_date.strftime('%Y-%m-%d')}")
+    logger.info(f"[EMBARGO] Post-Market Production Execution Horizon: {production_date_str}")
     
     X_train = X_panel.loc[X_panel.index.isin(training_dates, level=0)]
     y_train = y_panel.loc[y_panel.index.isin(training_dates, level=0)]
